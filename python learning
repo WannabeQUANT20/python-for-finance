@@ -1,1 +1,80 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import List, Dict
+
+
+def fetch_stock_data(tickers: List[str], period: str = "1y") -> pd.DataFrame:
+    """Download historical closing prices for a list of tickers."""
+    print(f"Fetching data for: {', '.join(tickers)}...")
+    data = yf.download(tickers, period=period, progress=False)["Close"]
+    if data.empty:
+        raise ValueError("No data fetched. Check ticker symbols or internet connection.")
+    return data.dropna()
+
+
+def calculate_metrics(prices: pd.DataFrame, weights: List[float], risk_free_rate: float = 0.065) -> Dict[str, float]:
+    """
+    Calculate annualized return, volatility, and Sharpe ratio for a portfolio.
+    Default risk_free_rate is set to 6.5% (approximate 10Y Indian G-Sec yield).
+    """
+    weights_arr = np.array(weights)
+    if not np.isclose(weights_arr.sum(), 1.0):
+        raise ValueError("Portfolio weights must sum to 1.0")
+
+    # Calculate daily logarithmic returns
+    daily_returns = np.log(prices / prices.shift(1)).dropna()
+    
+    # Annualize metrics (252 trading days in a year)
+    annual_returns = daily_returns.mean() * 252
+    cov_matrix = daily_returns.cov() * 252
+
+    port_return = float(np.sum(annual_returns * weights_arr))
+    port_volatility = float(np.sqrt(np.dot(weights_arr.T, np.dot(cov_matrix, weights_arr))))
+    sharpe_ratio = (port_return - risk_free_rate) / port_volatility
+
+    return {
+        "Expected Annual Return (%)": round(port_return * 100, 2),
+        "Annual Volatility / Risk (%)": round(port_volatility * 100, 2),
+        "Sharpe Ratio": round(sharpe_ratio, 2)
+    }
+
+
+def plot_normalized_performance(prices: pd.DataFrame, output_file: str = "portfolio_performance.png") -> None:
+    """Normalize stock prices to 100 at start date and save a comparison chart."""
+    normalized = (prices / prices.iloc[0]) * 100
+    
+    plt.figure(figsize=(10, 6))
+    for column in normalized.columns:
+        plt.plot(normalized.index, normalized[column], label=column, linewidth=1.8)
+        
+    plt.title("Normalized Stock Performance (Base = 100)", fontsize=14, fontweight="bold")
+    plt.xlabel("Date")
+    plt.ylabel("Normalized Price")
+    plt.legend()
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=300)
+    print(f"Chart saved to {output_file}")
+
+
+if __name__ == "__main__":
+    # Example Portfolio: NSE Stocks (Reliance, TCS, HDFC Bank, Infosys)
+    # You can replace these with US tickers like ["AAPL", "MSFT", "GOOGL", "AMZN"]
+    TICKERS = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS"]
+    WEIGHTS = [0.30, 0.25, 0.25, 0.20]
+
+    try:
+        stock_prices = fetch_stock_data(TICKERS, period="1y")
+        metrics = calculate_metrics(stock_prices, WEIGHTS)
+        
+        print("\n--- Portfolio Risk & Return Summary ---")
+        for key, value in metrics.items():
+            print(f"{key}: {value}")
+            
+        plot_normalized_performance(stock_prices)
+        
+    except Exception as e:
+        print(f"Error: {e}")
 
